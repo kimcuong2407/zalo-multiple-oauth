@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zalo Multi Bridge</title>
+<style>
+:root{--bg:#0f0f11;--fg:#e4e4e7;--accent:#3b82f6;--accent2:#2563eb;--red:#ef4444;--green:#22c55e;--yellow:#eab308;--card:#18181b;--border:#27272a;--muted:#71717a;--hover:#252529;--radius:10px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg);color:var(--fg);min-height:100vh}
+header{background:var(--card);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+header h1{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+header h1 span{color:var(--accent)}
+header .status-bar{display:flex;gap:16px;font-size:12px;color:var(--muted)}
+header .status-bar .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+header .status-bar .dot.green{background:var(--green)}
+header .status-bar .dot.red{background:var(--red)}
+main{padding:24px;max-width:1200px;margin:0 auto}
+section{margin-bottom:32px}
+section h2{font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;transition:border-color .15s}
+.card:hover{border-color:var(--accent)}
+.card .card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.card .card-title{font-weight:600;font-size:14px}
+.card .card-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.card .card-actions{display:flex;gap:6px;margin-top:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;text-transform:uppercase}
+.badge.active{background:#166534;color:var(--green)}
+.badge.inactive{background:#422006;color:var(--yellow)}
+.badge.nologin{background:#450a0a;color:var(--red)}
+.btn{padding:7px 14px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;font-family:var(--font)}
+.btn:hover{background:var(--hover);border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent2)}
+.btn.danger{color:var(--red)}
+.btn.danger:hover{border-color:var(--red);background:#1a0000}
+.btn.sm{padding:4px 10px;font-size:11px}
+button:disabled{opacity:.4;cursor:not-allowed}
+
+/* QR Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:420px;width:90%;text-align:center}
+.modal h3{font-size:16px;margin-bottom:4px}
+.modal p{font-size:13px;color:var(--muted);margin-bottom:16px}
+.modal .qr-box{background:#fff;display:inline-block;padding:12px;border-radius:8px;margin-bottom:12px}
+.modal .qr-box img{width:240px;height:240px}
+.modal .qr-status{font-size:12px;color:var(--muted)}
+.modal .btn-row{display:flex;gap:8px;justify-content:center;margin-top:12px}
+
+/* Messages */
+.msg-list{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);max-height:60vh;overflow-y:auto}
+.msg-item{padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.msg-item:hover{background:var(--hover)}
+.msg-item:last-child{border-bottom:none}
+.msg-item .msg-header{display:flex;justify-content:space-between;margin-bottom:4px}
+.msg-item .msg-sender{font-weight:600;font-size:13px}
+.msg-item .msg-time{font-size:10px;color:var(--muted)}
+.msg-item .msg-text{font-size:13px;color:var(--fg);white-space:pre-wrap;word-break:break-word}
+.msg-item .msg-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;margin-right:6px}
+.msg-item .msg-tag.direct{background:#1e3a5f;color:#60a5fa}
+.msg-item .msg-tag.group{background:#3b1f5f;color:#a78bfa}
+.msg-item .msg-account{font-size:10px;color:var(--muted);margin-top:4px}
+
+/* Add account */
+.add-form{display:flex;gap:8px;margin-bottom:12px}
+.add-form input{flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;font-family:var(--font);outline:none}
+.add-form input:focus{border-color:var(--accent)}
+.empty-msg{text-align:center;padding:32px;color:var(--muted);font-size:13px}
+
+/* Tabs */
+.tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.tab{padding:8px 16px;cursor:pointer;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;background:none;border-top:none;border-left:none;border-right:none;font-family:var(--font)}
+.tab:hover{color:var(--fg)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* Filter chips */
+.filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.chip{padding:5px 14px;border-radius:20px;border:1px solid var(--border);background:var(--card);color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;font-family:var(--font);transition:all .15s}
+.chip:hover{color:var(--fg);border-color:var(--accent)}
+.chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.filter-bar .count{margin-left:auto;font-size:11px;color:var(--muted)}
+
+/* Pager */
+.pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;flex-wrap:wrap}
+.pager .page-info{font-size:12px;color:var(--muted);margin:0 8px}
+.pager button:disabled{opacity:.3;cursor:not-allowed}
+
+.conv-row{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.conv-row:hover{background:var(--hover)}
+.conv-row .conv-name{font-size:13px;font-weight:500}
+.conv-row .conv-preview{font-size:11px;color:var(--muted);margin-top:2px}
+.conv-row .conv-badge{font-size:10px;color:var(--muted)}
+
+/* Chat view */
+.chat-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0;border-bottom:none}
+.chat-header .back{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
+.chat-header .back:hover{color:var(--fg)}
+.chat-box{background:var(--card);border:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);max-height:50vh;overflow-y:auto}
+.chat-bubble{padding:8px 16px;margin:4px 12px;border-radius:12px;max-width:80%;word-break:break-word;font-size:13px}
+.chat-bubble.them{background:var(--accent);color:#fff;margin-left:auto;border-bottom-right-radius:4px}
+.chat-bubble.me{background:#27272a;color:var(--fg);border-bottom-left-radius:4px}
+.send-form{display:flex;gap:8px;padding:12px 16px}
+.send-form input{flex:1;padding:8px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;font-family:var(--font);outline:none}
+.send-form input:focus{border-color:var(--accent)}
+.send-form button{padding:8px 16px;border-radius:20px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;font-weight:500}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>⬡</span> Zalo Multi Bridge</h1>
+  <div class="status-bar">
+    <span><span class="dot green" id="status-dot"></span><span id="status-text">OK</span></span>
+    <span id="account-count">0 accounts</span>
+  </div>
+</header>
+<main>
+  <!-- Tabs -->
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="accounts">Tài khoản</button>
+    <button class="tab" data-tab="messages">Tin nhắn</button>
+    <button class="tab" data-tab="groups">Nhóm</button>
+    <button class="tab" data-tab="conversations">Đoạn chat</button>
+  </div>
+
+  <!-- Accounts tab -->
+  <section id="tab-accounts">
+    <div class="add-form">
+      <input id="new-account-name" type="text" placeholder="Tên tài khoản (VD: personal, work)">
+      <button class="btn primary" id="btn-add" onclick="addAccount()">+ Thêm</button>
+    </div>
+    <div class="cards" id="accounts-list"></div>
+  </section>
+
+  <!-- Messages tab -->
+  <section id="tab-messages" style="display:none">
+    <div class="msg-list" id="messages-list"></div>
+  </section>
+
+  <!-- Groups tab -->
+  <section id="tab-groups" style="display:none">
+    <select id="groups-account" style="margin-bottom:12px;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;font-family:var(--font)">
+      <option value="">Chọn tài khoản...</option>
+    </select>
+    <input id="groups-search" type="text" placeholder="🔍 Tìm theo tên..." style="width:100%;margin-bottom:12px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;font-family:var(--font);outline:none">
+    <div class="filter-bar" id="groups-filter">
+      <button class="chip active" data-filter="all">Tất cả</button>
+      <button class="chip" data-filter="group">Nhóm</button>
+      <button class="chip" data-filter="direct">DM</button>
+      <span class="count" id="groups-count"></span>
+    </div>
+    <div id="groups-list"></div>
+    <div class="pager" id="groups-pager"></div>
+  </section>
+
+  <!-- Conversations tab -->
+  <section id="tab-conversations" style="display:none">
+    <select id="conv-account" style="margin-bottom:12px;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-size:13px;font-family:var(--font)">
+      <option value="">Chọn tài khoản...</option>
+    </select>
+    <div id="conversations-list"></div>
+    <div id="chat-view" style="display:none"></div>
+  </section>
+</main>
+
+<!-- QR Modal -->
+<div class="modal-overlay" id="qr-modal">
+  <div class="modal">
+    <h3 id="qr-title">QR Login</h3>
+    <p id="qr-subtitle">Scan bằng Zalo app</p>
+    <div class="qr-box"><img id="qr-img" src="" alt="QR"></div>
+    <div class="qr-status" id="qr-status">Đang tạo QR...</div>
+    <div class="btn-row">
+      <button class="btn" onclick="closeQR()">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE='';
+let currentTab='accounts';
+let qrInterval=null;
+let qrAccount=null;
+let selectedThread=null;
+let selectedConvAcc=null;
+let selectedGroupsAcc=null;
+let groupsFilter='all';
+let groupsCache=[];
+let groupsSearch='';
+let groupsPage=1;
+const GROUPS_PER_PAGE=20;
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
+  document.getElementById('new-account-name').addEventListener('keydown',e=>{if(e.key==='Enter')addAccount();});
+  fetchAccounts();
+  fetchMessages();
+  initSSE();
+});
+
+// ── SSE for real-time login events ──
+function initSSE(){
+  const sse=new EventSource('/events');
+  sse.addEventListener('login-success',(e)=>{
+    const d=JSON.parse(e.data);
+    fetchAccounts();
+    if(qrAccount===d.accountId)closeQR();
+  });
+  sse.addEventListener('disconnected',()=>fetchAccounts());
+  sse.addEventListener('new-message',()=>{
+    if(currentTab==='messages')fetchMessages();
+  });
+  sse.onerror=()=>{/* reconnect built-in */};
+}
+
+// ── Tabs ──
+function switchTab(tab){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+  document.getElementById('tab-accounts').style.display=tab==='accounts'?'block':'none';
+  document.getElementById('tab-messages').style.display=tab==='messages'?'block':'none';
+  document.getElementById('tab-groups').style.display=tab==='groups'?'block':'none';
+  document.getElementById('tab-conversations').style.display=tab==='conversations'?'block':'none';
+  if(tab==='messages') fetchMessages();
+  if(tab==='conversations') refreshConvSelect();
+  if(tab==='groups') refreshGroupsSelect();
+}
+
+// ── Health ──
+async function api(path,opts={}){
+  const r=await fetch(path,opts);
+  return r.json();
+}
+
+async function fetchAccounts(){
+  try{
+    const d=await api('/accounts');
+    const list=document.getElementById('accounts-list');
+    const active=d.filter(a=>a.active).length;
+    const total=d.length;
+    document.getElementById('account-count').textContent=`${total} accounts (${active} active)`;
+    document.getElementById('status-dot').className='dot '+(active>0?'green':'red');
+    document.getElementById('status-text').textContent=active>0?'ONLINE':'IDLE';
+
+    if(d.length===0){
+      list.innerHTML='<div class="empty-msg">Chưa có tài khoản nào. Thêm ở trên.</div>';
+      return;
+    }
+    list.innerHTML=d.map(a=>{
+      let badge='badge nologin',badgeText='Chưa login';
+      if(a.active){badge='badge active';badgeText='Online';}
+      else if(a.hasCredentials){badge='badge inactive';badgeText='Đã lưu creds';}
+      let actions='';
+      if(a.active){
+        actions=`<button class="btn sm" onclick="syncAccount('${a.id}')">↻ Sync</button>
+        <button class="btn sm danger" onclick="logoutAccount('${a.id}')">Đăng xuất</button>`;
+      }else{
+        actions=`<button class="btn sm primary" onclick="loginAccount('${a.id}')">Đăng nhập</button>`;
+      }
+      return `<div class="card">
+        <div class="card-header">
+          <div><div class="card-title">${a.id}</div>
+          ${a.displayName?`<div class="card-meta">${a.displayName}</div>`:''}
+          ${a.ownId?`<div class="card-meta">ID: ${a.ownId}</div>`:''}</div>
+          <span class="${badge}">${badgeText}</span>
+        </div>
+        <div class="card-actions">${actions}</div>
+      </div>`;
+    }).join('');
+  }catch(e){console.error(e)}
+}
+
+// ── Add / Login / Logout ──
+async function addAccount(){
+  const inp=document.getElementById('new-account-name');
+  const name=inp.value.trim();
+  if(!name)return;
+  await loginAccount(name);
+  inp.value='';
+}
+
+async function loginAccount(id){
+  await api('/accounts/'+id+'/login',{method:'POST'});
+  fetchAccounts();
+  openQR(id);
+}
+
+async function logoutAccount(id){
+  await api('/accounts/'+id+'/logout',{method:'POST'});
+  fetchAccounts();
+}
+
+async function syncAccount(id){
+  const btn=event.target;
+  btn.disabled=true;
+  btn.textContent='⏳ Syncing...';
+  try{
+    const d=await api('/accounts/'+id+'/sync',{method:'POST'});
+    btn.textContent=`✓ ${d.syncedMessages||0} msgs`;
+    fetchMessages();
+    setTimeout(()=>{btn.textContent='↻ Sync';btn.disabled=false;},3000);
+  }catch(e){
+    btn.textContent='✗ Failed';
+    setTimeout(()=>{btn.textContent='↻ Sync';btn.disabled=false;},2000);
+  }
+}
+
+// ── QR ──
+function openQR(id){
+  qrAccount=id;
+  document.getElementById('qr-title').textContent='QR Login — '+id;
+  document.getElementById('qr-modal').classList.add('open');
+  if(qrInterval)clearInterval(qrInterval);
+  qrInterval=setInterval(pollQR,1500);
+  pollQR();
+}
+function closeQR(){
+  document.getElementById('qr-modal').classList.remove('open');
+  if(qrInterval){clearInterval(qrInterval);qrInterval=null;}
+  qrAccount=null;
+  fetchAccounts();
+}
+async function pollQR(){
+  if(!qrAccount)return;
+  try{
+    const r=await fetch('/qr/'+qrAccount+'.png');
+    if(r.headers.get('content-type')==='image/png'){
+      const blob=await r.blob();
+      const url=URL.createObjectURL(blob);
+      const img=document.getElementById('qr-img');
+      img.onload=()=>URL.revokeObjectURL(url);
+      img.src=url;
+      document.getElementById('qr-status').textContent='Scan QR này bằng Zalo app';
+    }
+  }catch(e){
+    document.getElementById('qr-status').textContent='Đang kết nối...';
+  }
+  // Check login status
+  const d=await api('/accounts');
+  const acc=d.find(a=>a.id===qrAccount);
+  if(acc&&acc.active){closeQR();fetchAccounts();}
+}
+
+// ── Messages ──
+async function fetchMessages(){
+  try{
+    const d=await api('/messages');
+    const list=document.getElementById('messages-list');
+    let html='';
+    const all=[];
+    for(const[accId,msgs]of Object.entries(d)){
+      for(const m of msgs){
+        all.push({...m,accountId:accId});
+      }
+    }
+    all.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+    if(all.length===0){
+      list.innerHTML='<div class="empty-msg">Chưa có tin nhắn nào. Login tài khoản để nhận tin nhắn realtime.</div>';
+      return;
+    }
+    html=all.slice(0,100).map(m=>{
+      let tag=m.type==='direct'?'<span class="msg-tag direct">DM</span>':'<span class="msg-tag group">GROUP</span>';
+      return `<div class="msg-item" onclick="openChat('${m.accountId}','${m.threadId}')">
+        <div class="msg-header">
+          <span class="msg-sender">${tag}${h(m.senderName||m.senderId||'?')}</span>
+          <span class="msg-time">${fmt(m.timestamp)}</span>
+        </div>
+        <div class="msg-text">${h(m.text||'')}</div>
+        <div class="msg-account">📱 ${m.accountId}${m.groupName?' · '+h(m.groupName):''}</div>
+      </div>`;
+    }).join('');
+    list.innerHTML=html;
+  }catch(e){}
+}
+
+function fmt(ts){
+  const d=new Date(ts);
+  return d.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+}
+function h(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ── Conversations ──
+async function refreshConvSelect(){
+  const sel=document.getElementById('conv-account');
+  sel.onchange=()=>{selectedConvAcc=sel.value;fetchConversations();};
+  const d=await api('/accounts');
+  sel.innerHTML='<option value="">Chọn tài khoản...</option>';
+  d.filter(a=>a.active).forEach(a=>{
+    sel.innerHTML+=`<option value="${a.id}">${a.id}${a.displayName?' ('+h(a.displayName)+')':''}</option>`;
+  });
+}
+async function fetchConversations(){
+  const acc=selectedConvAcc;
+  if(!acc)return;
+  try{
+    const d=await api('/accounts/'+acc+'/conversations');
+    const list=document.getElementById('conversations-list');
+    const convs=d.conversations||d.data||[];
+    if(!convs.length){list.innerHTML='<div class="empty-msg">Không có đoạn chat nào.</div>';return;}
+    list.innerHTML=convs.map(c=>{
+      const name=c.name||c.id||'?';
+      const typeLabel=c.type==='group'?'Nhóm':'DM';
+      const members=c.members?` · ${c.members} members`:'';
+      return `<div class="conv-row" onclick="openChat('${acc}','${c.id}')">
+        <div><div class="conv-name">${h(name)}</div>
+        <div class="conv-preview">${typeLabel}${members}</div></div>
+        <div class="conv-badge">${c.type==='group'?'GROUP':'DM'}</div>
+      </div>`;
+    }).join('');
+  }catch(e){console.error(e)}
+}
+
+// ── Groups tab (all groups + DM filter) ──
+async function refreshGroupsSelect(){
+  const sel=document.getElementById('groups-account');
+  sel.onchange=()=>{selectedGroupsAcc=sel.value;fetchGroups();};
+  document.querySelectorAll('#groups-filter .chip').forEach(c=>{
+    c.onclick=()=>{
+      groupsFilter=c.dataset.filter;
+      groupsPage=1;
+      document.querySelectorAll('#groups-filter .chip').forEach(x=>x.classList.toggle('active',x===c));
+      renderGroups();
+    };
+  });
+  const search=document.getElementById('groups-search');
+  search.oninput=()=>{groupsSearch=search.value.trim().toLowerCase();groupsPage=1;renderGroups();};
+  const d=await api('/accounts');
+  const actives=d.filter(a=>a.active);
+  sel.innerHTML='<option value="">Chọn tài khoản...</option>';
+  actives.forEach(a=>{
+    sel.innerHTML+=`<option value="${a.id}"${a.id===selectedGroupsAcc?' selected':''}>${a.id}${a.displayName?' ('+h(a.displayName)+')':''}</option>`;
+  });
+  // Auto-select first active account
+  if(!selectedGroupsAcc&&actives.length){selectedGroupsAcc=actives[0].id;sel.value=selectedGroupsAcc;}
+  if(selectedGroupsAcc)fetchGroups();
+}
+
+async function fetchGroups(){
+  const acc=selectedGroupsAcc;
+  const list=document.getElementById('groups-list');
+  if(!acc){list.innerHTML='<div class="empty-msg">Chọn tài khoản để xem nhóm.</div>';return;}
+  list.innerHTML='<div class="empty-msg">Đang tải...</div>';
+  try{
+    const d=await api('/accounts/'+acc+'/conversations');
+    groupsCache=d.conversations||d.data||[];
+    groupsPage=1;
+    renderGroups();
+  }catch(e){list.innerHTML='<div class="empty-msg">Lỗi tải nhóm: '+h(e.message)+'</div>'}
+}
+
+function renderGroups(){
+  const list=document.getElementById('groups-list');
+  const pager=document.getElementById('groups-pager');
+  const acc=selectedGroupsAcc;
+  let items=groupsCache;
+  if(groupsFilter==='group')items=items.filter(c=>c.type==='group');
+  else if(groupsFilter==='direct')items=items.filter(c=>c.type!=='group');
+  if(groupsSearch)items=items.filter(c=>String(c.name||c.id||'').toLowerCase().includes(groupsSearch));
+
+  const totalG=groupsCache.filter(c=>c.type==='group').length;
+  const totalD=groupsCache.length-totalG;
+  document.getElementById('groups-count').textContent=`${totalG} nhóm · ${totalD} DM`;
+
+  if(!items.length){
+    list.innerHTML='<div class="empty-msg">Không có mục nào.</div>';
+    pager.innerHTML='';
+    return;
+  }
+
+  // Pagination
+  const totalPages=Math.ceil(items.length/GROUPS_PER_PAGE);
+  if(groupsPage>totalPages)groupsPage=totalPages;
+  if(groupsPage<1)groupsPage=1;
+  const start=(groupsPage-1)*GROUPS_PER_PAGE;
+  const pageItems=items.slice(start,start+GROUPS_PER_PAGE);
+
+  list.innerHTML=pageItems.map(c=>{
+    const name=c.name||c.id||'?';
+    const isGroup=c.type==='group';
+    const typeLabel=isGroup?'Nhóm':'DM';
+    const members=c.members?` · ${c.members} thành viên`:'';
+    const syncBtn=isGroup?`<button class="btn sm" onclick="event.stopPropagation();syncGroup('${acc}','${c.id}',this)">↻ Đồng bộ 200</button>`:'';
+    return `<div class="conv-row" onclick="openChat('${acc}','${c.id}')">
+      <div><div class="conv-name">${h(name)}</div>
+      <div class="conv-preview">${typeLabel}${members}</div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${syncBtn}
+        <div class="conv-badge">${isGroup?'GROUP':'DM'}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if(totalPages>1){
+    pager.innerHTML=`
+      <button class="btn sm" onclick="gotoGroupsPage(1)" ${groupsPage===1?'disabled':''}>«</button>
+      <button class="btn sm" onclick="gotoGroupsPage(${groupsPage-1})" ${groupsPage===1?'disabled':''}>‹ Trước</button>
+      <span class="page-info">Trang ${groupsPage}/${totalPages} · ${items.length} mục</span>
+      <button class="btn sm" onclick="gotoGroupsPage(${groupsPage+1})" ${groupsPage===totalPages?'disabled':''}>Sau ›</button>
+      <button class="btn sm" onclick="gotoGroupsPage(${totalPages})" ${groupsPage===totalPages?'disabled':''}>»</button>`;
+  }else{
+    pager.innerHTML=`<span class="page-info">${items.length} mục</span>`;
+  }
+}
+
+function gotoGroupsPage(p){
+  groupsPage=p;
+  renderGroups();
+  document.getElementById('tab-groups').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function syncGroup(accId,groupId,btn){
+  btn.disabled=true;
+  const orig=btn.textContent;
+  btn.textContent='⏳ Đang đồng bộ...';
+  try{
+    const d=await api('/accounts/'+accId+'/sync/'+groupId+'?count=200',{method:'POST'});
+    if(d.error){
+      if(d.code==='GROUP_HISTORY_UNAVAILABLE'){
+        btn.textContent='⚠ Zalo tạm khoá lịch sử';
+        btn.title=d.error;
+        alert(d.error);
+      }else{
+        btn.textContent='✗ '+(d.error.slice(0,30));
+      }
+      setTimeout(()=>{btn.textContent=orig;btn.disabled=false;},4000);
+      return;
+    }
+    btn.textContent=`✓ +${d.added||0} (${d.fetched||0} tải về)`;
+    setTimeout(()=>{btn.textContent=orig;btn.disabled=false;},4000);
+  }catch(e){
+    btn.textContent='✗ Lỗi';
+    setTimeout(()=>{btn.textContent=orig;btn.disabled=false;},2500);
+  }
+}
+
+// ── Chat view ──
+async function openChat(accId,threadId){
+  selectedThread={accId,threadId};
+  document.getElementById('tab-conversations').style.display='block';
+  switchTab('conversations');
+  const view=document.getElementById('chat-view');
+  view.style.display='block';
+  document.getElementById('conversations-list').style.display='none';
+  document.getElementById('conv-account').style.display='none';
+
+  try{
+    const d=await api('/accounts/'+accId+'/history/'+threadId+'?count=30');
+    const msgs=Array.isArray(d.messages)?d.messages:(d.data||[]);
+    let html=`<div class="chat-header">
+      <button class="back" onclick="closeChat()">←</button>
+      <span>${accId} / ${threadId}</span>
+    </div><div class="chat-box">`;
+    msgs.forEach(m=>{
+      const text=typeof m.content==='string'?m.content:JSON.stringify(m.content);
+      const cls=m.uidFrom==='0'?'me':'them';
+      html+=`<div class="chat-bubble ${cls}">${h(text)}</div>`;
+    });
+    html+=`</div><div class="send-form">
+      <input id="chat-msg-input" placeholder="Nhập tin nhắn..." onkeydown="if(event.key==='Enter')sendChatMsg()">
+      <button onclick="sendChatMsg()">Gửi</button>
+    </div>`;
+    view.innerHTML=html;
+    // Scroll to bottom
+    setTimeout(()=>{const b=document.querySelector('.chat-box');if(b)b.scrollTop=b.scrollHeight;},100);
+  }catch(e){view.innerHTML='<div class="empty-msg">Lỗi tải chat: '+e.message+'</div>'}
+}
+
+function closeChat(){
+  selectedThread=null;
+  document.getElementById('chat-view').style.display='none';
+  document.getElementById('conversations-list').style.display='block';
+  document.getElementById('conv-account').style.display='block';
+}
+
+async function sendChatMsg(){
+  if(!selectedThread)return;
+  const inp=document.getElementById('chat-msg-input');
+  const text=inp.value.trim();
+  if(!text)return;
+  await api('/accounts/'+selectedThread.accId+'/send',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({threadId:selectedThread.threadId,text})
+  });
+  inp.value='';
+  // Append sent msg to view
+  const box=document.querySelector('.chat-box');
+  if(box){
+    const div=document.createElement('div');
+    div.className='chat-bubble me';
+    div.textContent=text;
+    box.appendChild(div);
+    box.scrollTop=box.scrollHeight;
+  }
+}
+</script>
+</body>
+</html>

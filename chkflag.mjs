@@ -1,0 +1,12 @@
+import fs from "node:fs"; import os from "node:os"; import path from "node:path";
+import { Zalo } from "zca-js";
+const creds = JSON.parse(fs.readFileSync(path.join(os.homedir(),".zalo-multi-bridge","accounts","personal","credentials.json"),"utf-8"));
+const api = await new Zalo({selfListen:false,userAgent:creds.userAgent,language:"vi"}).login(creds);
+const ctx = api.getContext ? api.getContext() : null;
+const f = ctx?.settings?.features || {};
+const keys = Object.keys(f).filter(k=>/hist|sync|cloud|backup|msgcache/i.test(k));
+console.log("relevant feature flags:");
+for (const k of keys) console.log("  ", k, "=", JSON.stringify(f[k]));
+console.log("\nenable_fetch_history_message =", JSON.stringify(f.enable_fetch_history_message));
+console.log("enable_history_message       =", JSON.stringify(f.enable_history_message));
+process.exit(0);

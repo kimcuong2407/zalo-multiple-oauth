@@ -1,0 +1,14 @@
+import fs from "node:fs"; import os from "node:os"; import path from "node:path";
+import { Zalo } from "zca-js";
+const creds = JSON.parse(fs.readFileSync(path.join(os.homedir(),".zalo-multi-bridge","accounts","personal","credentials.json"),"utf-8"));
+const api = await new Zalo({selfListen:false,userAgent:creds.userAgent,language:"vi"}).login(creds);
+const ctx = api.getContext();
+console.log("imei from ctx:", JSON.stringify(ctx.imei));
+console.log("imei from creds:", JSON.stringify(creds.imei));
+console.log("secretKey set:", !!ctx.secretKey);
+const f = ctx.settings?.features || {};
+console.log("\ncloud_setting.enable:", f.cloud_setting?.enable);
+console.log("sync_2_web.enable:", f.sync_2_web?.enable);
+console.log("auto_fetch_msg_mini_cloud.enable:", f.auto_fetch_msg_mini_cloud?.enable);
+console.log("zalo_cloud.z_cloud.enable:", f.zalo_cloud?.z_cloud?.enable);
+process.exit(0);

@@ -1,0 +1,6 @@
+node_modules/
+__pycache__/
+.claude/
+*.log
+.env
+qr.png

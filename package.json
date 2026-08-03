@@ -1,0 +1,25 @@
+{
+  "type": "module",
+  "name": "zalo-multi-bridge",
+  "version": "1.0.0",
+  "description": "Multi-account Zalo bridge — manage multiple Zalo accounts simultaneously via zca-js. HTTP API + CLI. One process, all accounts.",
+  "main": "server.js",
+  "bin": {
+    "zalo-multi": "./cli.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "login": "node login.mjs",
+    "cli": "node cli.js"
+  },
+  "keywords": ["zalo", "zca-js", "multi-account", "bridge", "api", "messaging"],
+  "license": "MIT",
+  "dependencies": {
+    "zca-js": "^2.1.2",
+    "qrcode-terminal": "^0.12.0",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
