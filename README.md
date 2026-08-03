@@ -49,7 +49,7 @@ python3 zalo_multi.py messages my_account_1  # Đọc của 1 account
 | POST | `/accounts/:id/login` | Login (QR nếu chưa có creds) |
 | POST | `/accounts/:id/logout` | Logout |
 | POST | `/accounts/login-all` | Auto-login tất cả accounts có creds |
-| GET | `/accounts/:id/messages` | Messages buffer (real-time) |
+| GET | `/accounts/:id/messages` | Lịch sử tin nhắn từ SQLite |
 | GET | `/messages` | Messages từ TẤT CẢ accounts |
 | GET | `/accounts/:id/conversations` | List conversations |
 | GET | `/accounts/:id/history/:threadId` | Chat history |
@@ -70,7 +70,40 @@ node cli.js start          # Start API server
 
 ## Data
 
-Credentials lưu tại `~/.zalo-multi-bridge/accounts/<name>/credentials.json`
+Dữ liệu mặc định nằm tại `~/.zalo-multi-bridge/`:
+
+```text
+~/.zalo-multi-bridge/
+├── accounts/<name>/credentials.json  # Cookie/IMEI đăng nhập
+└── messages.sqlite                   # Toàn bộ lịch sử tin nhắn
+```
+
+Tin nhắn được ghi ngay vào SQLite và **không giới hạn số lượng lưu trữ**. Tham số
+`limit` của API chỉ giới hạn số record trong mỗi response (tối đa 500), không xóa
+các tin cũ trong database.
+
+Có thể đổi thư mục dữ liệu bằng biến môi trường:
+
+```bash
+ZALO_MULTI_DATA_DIR=/duong/dan/moi npm start
+```
+
+### Chuyển dữ liệu JSON cũ
+
+Khi start lần đầu, bridge tự động import các file
+`~/.zalo-multi-bridge/messages/<account>.json` vào `messages.sqlite`. Mỗi file chỉ
+được import một lần trong transaction. File JSON cũ được giữ nguyên làm backup;
+sau khi kiểm tra dữ liệu trong SQLite, bạn có thể tự archive chúng.
+
+Nếu JSON bị lỗi, server dừng và báo rõ file lỗi thay vì bỏ qua hoặc import một
+phần. Credentials vẫn lưu riêng trong `accounts/<name>/credentials.json`, không
+được chuyển vào SQLite.
+
+Chạy test persistence/migration bằng:
+
+```bash
+npm test
+```
 
 ## Hermes Integration
 

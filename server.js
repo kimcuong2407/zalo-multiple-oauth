@@ -3,6 +3,8 @@
 
 import express from "express";
 import { manager } from "./accounts.js";
+import { MessageStore } from "./message-store.js";
+import { createMessageRouter } from "./message-routes.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -16,53 +18,16 @@ const HOST = process.env.ZALO_MULTI_HOST || "127.0.0.1";
 const app = express();
 app.use(express.json());
 
-// ── Message store (persistent JSON files + in-memory cache) ──
+// ── Message store (SQLite, unlimited retention) ──
+// Every message is committed as it arrives, so nothing is lost on an abrupt exit.
+// Legacy JSON files under DATA_DIR/messages are imported once on startup and kept
+// untouched as a manual backup.
 const DATA_DIR = process.env.ZALO_MULTI_DATA_DIR || path.join(os.homedir(), ".zalo-multi-bridge");
-const MSG_DIR = path.join(DATA_DIR, "messages");
-if (!fs.existsSync(MSG_DIR)) fs.mkdirSync(MSG_DIR, { recursive: true });
-
-function msgPath(accountId) { return path.join(MSG_DIR, `${accountId}.json`); }
-
-function loadMessages(accountId) {
-  const p = msgPath(accountId);
-  if (fs.existsSync(p)) {
-    try { return JSON.parse(fs.readFileSync(p, "utf-8")); } catch { return []; }
-  }
-  return [];
-}
-
-function saveMessages(accountId, msgs) {
-  // Keep last 5000 messages
-  const toSave = msgs.slice(-5000);
-  fs.writeFileSync(msgPath(accountId), JSON.stringify(toSave, null, 2));
-  return toSave;
-}
-
-const messageStore = new Map(); // accountId -> Array<msg>
+const messageStore = new MessageStore({ dataDir: DATA_DIR });
 
 function bufferMsg(accountId, msg) {
-  let msgs = messageStore.get(accountId);
-  if (!msgs) {
-    msgs = loadMessages(accountId);
-    messageStore.set(accountId, msgs);
-  }
-  // Deduplicate by msgId
-  const exists = msg.msgId && msgs.some(m => m.msgId === msg.msgId);
-  if (!exists) {
-    msgs.push({ timestamp: new Date().toISOString(), ...msg });
-  }
-  // Save to disk periodically (every 50 messages)
-  if (msgs.length % 50 === 0) saveMessages(accountId, msgs);
+  return messageStore.insertMessage(accountId, { timestamp: new Date().toISOString(), ...msg });
 }
-
-// Auto-save all on shutdown
-process.on("SIGINT", () => {
-  for (const [accountId, msgs] of messageStore) saveMessages(accountId, msgs);
-  process.exit(0);
-});
-process.on("SIGTERM", () => {
-  for (const [accountId, msgs] of messageStore) saveMessages(accountId, msgs);
-});
 
 // Listen for messages
 manager.on("message", ({ accountId, ownId, message }) => {
@@ -106,16 +71,11 @@ function tally(accountId, kind, n) {
 }
 
 function storeOldMessages(accountId, ownId, messages, isGroup) {
-  // Load from disk first: comparing against an unloaded store counts every
-  // already-seen message as new.
-  if (!messageStore.has(accountId)) messageStore.set(accountId, loadMessages(accountId));
-
   let added = 0;
   for (const message of messages) {
     const data = message.data || message || {};
     if (!data.content) continue;
-    const before = messageStore.get(accountId).length;
-    bufferMsg(accountId, {
+    const { inserted } = bufferMsg(accountId, {
       type: isGroup ? "group" : "direct",
       threadId: isGroup ? data.idTo : (data.uidFrom === ownId ? data.idTo : data.uidFrom),
       ...(isGroup ? { groupId: data.idTo, groupName: data.groupName || null } : {}),
@@ -127,9 +87,8 @@ function storeOldMessages(accountId, ownId, messages, isGroup) {
       historical: true,
       raw: data,
     });
-    if (messageStore.get(accountId).length > before) added++;
+    if (inserted) added++;
   }
-  if (added > 0) saveMessages(accountId, messageStore.get(accountId));
   tally(accountId, isGroup ? "group" : "direct", added);
   console.log(`[backfill:${accountId}] ${isGroup ? "group" : "direct"}: +${added} of ${messages.length}`);
 }
@@ -210,39 +169,7 @@ app.post("/accounts/login-all", async (req, res) => {
 });
 
 // ── Messages (from persistent store) ──
-app.get("/accounts/:id/messages", (req, res) => {
-  const { id } = req.params;
-  const { since, limit = "50" } = req.query;
-  let msgs = messageStore.get(id) || loadMessages(id);
-
-  if (since) {
-    const sinceDate = new Date(since);
-    msgs = msgs.filter(m => new Date(m.timestamp) > sinceDate);
-  }
-
-  const max = Math.min(parseInt(limit, 10) || 50, 500);
-  msgs = msgs.slice(-max);
-
-  res.json({ accountId: id, count: msgs.length, messages: msgs });
-});
-
-// ── All messages from ALL accounts ──
-app.get("/messages", (req, res) => {
-  const { since, limit = "100" } = req.query;
-  const result = {};
-
-  for (const acc of manager.list()) {
-    let msgs = messageStore.get(acc.id) || loadMessages(acc.id);
-    if (since) {
-      const sinceDate = new Date(since);
-      msgs = msgs.filter(m => new Date(m.timestamp) > sinceDate);
-    }
-    const max = Math.min(parseInt(limit, 10) || 100, 500);
-    if (msgs.length > 0) result[acc.id] = msgs.slice(-max);
-  }
-
-  res.json(result);
-});
+app.use(createMessageRouter({ accountManager: manager, messageStore }));
 
 // Resolve full group info for an account.
 // getAllGroups() returns { version, gridVerMap: { groupId: version } } — NOT a list.
@@ -376,15 +303,8 @@ app.post("/accounts/:id/backfill", async (req, res) => {
 
     // Without lastMsgId Zalo replays the same first batch every time. Default to
     // the oldest message we already hold so repeated calls walk further back.
-    const store = messageStore.get(id) || loadMessages(id);
-    const oldestOf = (kind) => {
-      const rows = store.filter((m) => m.type === kind && m.msgId);
-      if (!rows.length) return null;
-      return rows.reduce((a, b) => ((a.ts ?? 0) <= (b.ts ?? 0) ? a : b)).msgId;
-    };
-
-    const directLast = req.query.lastMsgId || oldestOf("direct");
-    const groupLast = req.query.lastMsgId || oldestOf("group");
+    const directLast = req.query.lastMsgId || messageStore.findOldestMessageId(id, "direct");
+    const groupLast = req.query.lastMsgId || messageStore.findOldestMessageId(id, "group");
 
     // zca-js hardcodes first:true, which makes Zalo replay the same opening
     // window. Send the payload directly so we can set first:false and page back.
@@ -442,12 +362,9 @@ app.post("/accounts/:id/sync", async (req, res) => {
         const msgs = hist?.groupMsgs || [];
         let added = 0;
         for (const m of msgs) {
-          if (!messageStore.has(id)) messageStore.set(id, loadMessages(id));
-          const store = messageStore.get(id);
           const msgId = m.msgId || m.cliMsgId;
-          const exists = msgId && store.some(ex => ex.msgId === msgId);
-          if (!exists && m.content) {
-            store.push({
+          if (m.content) {
+            const { inserted } = messageStore.insertMessage(id, {
               timestamp: new Date(m.ts || Date.now()).toISOString(),
               type: "group",
               threadId: gid,
@@ -460,13 +377,10 @@ app.post("/accounts/:id/sync", async (req, res) => {
               ts: m.ts,
               synced: true,
             });
-            added++;
+            if (inserted) added++;
           }
         }
-        if (added > 0) {
-          totalMsgs += added;
-          saveMessages(id, store);
-        }
+        totalMsgs += added;
         // Small delay to avoid rate limiting
         await new Promise(r => setTimeout(r, 500));
       } catch (e) {
@@ -502,15 +416,11 @@ app.post("/accounts/:id/sync/:groupId", async (req, res) => {
       if (g) gname = g.name || g.groupName || groupId;
     } catch { /* optional */ }
 
-    if (!messageStore.has(id)) messageStore.set(id, loadMessages(id));
-    const store = messageStore.get(id);
-
     let added = 0;
     for (const m of msgs) {
       const msgId = m.msgId || m.cliMsgId;
-      const exists = msgId && store.some(ex => ex.msgId === msgId);
-      if (!exists && m.content) {
-        store.push({
+      if (m.content) {
+        const { inserted } = messageStore.insertMessage(id, {
           timestamp: new Date(m.ts || Date.now()).toISOString(),
           type: "group",
           threadId: groupId,
@@ -523,10 +433,9 @@ app.post("/accounts/:id/sync/:groupId", async (req, res) => {
           ts: m.ts,
           synced: true,
         });
-        added++;
+        if (inserted) added++;
       }
     }
-    if (added > 0) saveMessages(id, store);
 
     res.json({
       ok: true,
@@ -667,7 +576,7 @@ app.get("/events", (_req, res) => {
 });
 
 // Start
-app.listen(PORT, HOST, async () => {
+const server = app.listen(PORT, HOST, async () => {
   console.log(`[zalo-multi-bridge] API server on http://${HOST}:${PORT}`);
   console.log(`[zalo-multi-bridge] Data dir: ${process.env.ZALO_MULTI_DATA_DIR || "~/.zalo-multi-bridge"}`);
 
@@ -696,5 +605,26 @@ app.listen(PORT, HOST, async () => {
     console.log(`[zalo-multi-bridge] No accounts yet. Use: ./cli.js add <name>`);
   }
 });
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[zalo-multi-bridge] ${signal} received, shutting down...`);
+
+  server.close(() => {
+    messageStore.close();
+    process.exit(0);
+  });
+
+  // SSE clients can keep the HTTP server open indefinitely.
+  setTimeout(() => {
+    messageStore.close();
+    process.exit(0);
+  }, 5000).unref();
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 export default app;
