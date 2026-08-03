@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 zalo_multi.py — Python client for zalo-multi-bridge HTTP API.
-Designed to be called by Hermes Agent to read Zalo messages from multiple accounts.
+Reads Zalo messages from multiple accounts through the bridge server.
 
 Usage examples:
   python3 zalo_multi.py health
@@ -9,16 +9,25 @@ Usage examples:
   python3 zalo_multi.py messages
   python3 zalo_multi.py messages <account_id>
   python3 zalo_multi.py history <account_id> <thread_id>
-  python3 zalo_multi.py sync <account_id> <group_id> [count]   # đồng bộ N (mặc định 200) tin mới nhất của 1 group
+  python3 zalo_multi.py conversations <account_id>
+  python3 zalo_multi.py friends <account_id>
+  python3 zalo_multi.py groups <account_id>
   python3 zalo_multi.py send <account_id> <thread_id> "<text>"
+  python3 zalo_multi.py login <account_id>
+  python3 zalo_multi.py logout <account_id>
+  python3 zalo_multi.py backfill <account_id> [wait_seconds]
+
+Environment variables:
+  ZALO_MULTI_BASE_URL — bridge base URL (default http://127.0.0.1:8786)
 """
 
+import os
 import sys
 import json
 import urllib.request
 import urllib.error
 
-BASE_URL = "http://127.0.0.1:8786"
+BASE_URL = os.environ.get("ZALO_MULTI_BASE_URL", "http://127.0.0.1:8786").rstrip("/")
 
 
 def api(path, method="GET", data=None):
@@ -36,26 +45,39 @@ def api(path, method="GET", data=None):
     except urllib.error.HTTPError as e:
         try:
             return json.loads(e.read().decode("utf-8"))
-        except:
+        except Exception:
             return {"error": str(e), "status": e.code}
+    except ConnectionRefusedError:
+        return {
+            "error": f"Cannot connect to {BASE_URL}. Is the bridge running?",
+        }
     except Exception as e:
         return {"error": str(e)}
 
 
+COMMANDS = [
+    "health", "accounts", "messages", "history", "conversations",
+    "friends", "groups", "send", "login", "logout", "backfill",
+]
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 zalo_multi.py <command> [args...]")
-        print("Commands: health, accounts, messages, history, send")
+        print(f"Usage: python3 zalo_multi.py <command> [args...]")
+        print(f"Commands: {', '.join(COMMANDS)}")
         sys.exit(1)
 
     cmd = sys.argv[1]
+    if cmd not in COMMANDS:
+        print(f"Unknown command: {cmd}")
+        print(f"Available: {', '.join(COMMANDS)}")
+        sys.exit(1)
 
     if cmd == "health":
         print(json.dumps(api("/health"), indent=2, ensure_ascii=False))
 
     elif cmd == "accounts":
-        result = api("/accounts")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print(json.dumps(api("/accounts"), indent=2, ensure_ascii=False))
 
     elif cmd == "messages":
         account_id = sys.argv[2] if len(sys.argv) > 2 else None
@@ -70,17 +92,6 @@ def main():
             print("Usage: python3 zalo_multi.py history <account_id> <thread_id>")
             sys.exit(1)
         result = api(f"/accounts/{sys.argv[2]}/history/{sys.argv[3]}")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-
-    elif cmd == "sync":
-        if len(sys.argv) < 4:
-            print("Usage: python3 zalo_multi.py sync <account_id> <group_id> [count]")
-            sys.exit(1)
-        count = sys.argv[4] if len(sys.argv) > 4 else "200"
-        result = api(
-            f"/accounts/{sys.argv[2]}/sync/{sys.argv[3]}?count={count}",
-            method="POST",
-        )
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
     elif cmd == "conversations":
@@ -129,9 +140,17 @@ def main():
         result = api(f"/accounts/{sys.argv[2]}/logout", method="POST")
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
-    else:
-        print(f"Unknown command: {cmd}")
-        sys.exit(1)
+    elif cmd == "backfill":
+        if len(sys.argv) < 3:
+            print("Usage: python3 zalo_multi.py backfill <account_id> [wait_seconds]")
+            sys.exit(1)
+        wait_seconds = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+        wait_ms = wait_seconds * 1000
+        result = api(
+            f"/accounts/{sys.argv[2]}/backfill?wait={wait_ms}",
+            method="POST",
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

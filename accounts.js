@@ -34,9 +34,12 @@ class AccountManager extends EventEmitter {
   }
 
   _ensureDir(accountId) {
+    if (!/^[A-Za-z0-9_-]+$/.test(accountId)) {
+      throw new Error("account ID must contain only letters, numbers, underscores, and hyphens");
+    }
     const dir = path.join(ACCOUNTS_DIR, accountId);
     if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
     return dir;
   }
@@ -59,7 +62,7 @@ class AccountManager extends EventEmitter {
 
   _saveCredentials(accountId, creds) {
     const p = this._credentialsPath(accountId);
-    fs.writeFileSync(p, JSON.stringify(creds, null, 2));
+    fs.writeFileSync(p, JSON.stringify(creds, null, 2), { mode: 0o600 });
   }
 
   hasCredentials(accountId) {

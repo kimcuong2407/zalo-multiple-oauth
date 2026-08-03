@@ -9,9 +9,14 @@
   },
   "scripts": {
     "start": "node server.js",
-    "login": "node login.mjs",
+    "test": "node --test",
     "cli": "node cli.js",
-    "test": "node --test"
+    "add": "node cli.js add",
+    "login": "node cli.js login",
+    "list": "node cli.js list",
+    "status": "node cli.js status",
+    "logout": "node cli.js logout",
+    "help": "node cli.js help"
   },
   "keywords": [
     "zalo",
